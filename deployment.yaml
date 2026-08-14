@@ -17,6 +17,6 @@ spec:
         - name: nexus-container
           image: 3.91.26.115:8082/devsecops-nexus:latest
           ports:
-            - containerPort: 80
+            - containerPort: 8080
       imagePullSecrets:
         - name: artifactory-registry-secret
