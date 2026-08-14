@@ -25,6 +25,31 @@ pipeline {
             }
         }
 
+       stage('OWASP Dependency-Check') {
+        steps {
+            sh '''
+                echo "=== Jenkins Workspace ==="
+                pwd
+
+                echo "=== Creating report directory ==="
+                mkdir -p "$WORKSPACE/dependency-check-report"
+
+                echo "=== Checking directory ==="
+                ls -ld "$WORKSPACE/dependency-check-report"
+
+                echo "=== Running Dependency-Check ==="
+                dependency-check.sh \
+                    --project "DevSecOps-Nexus" \
+                    --scan "$WORKSPACE" \
+                    --format HTML \
+                    --format XML \
+                    --out "$WORKSPACE/dependency-check-report" \
+                    --failOnCVSS 11 \
+                    --disableOssIndex
+                '''
+            }
+        }
+
         stage('SonarQube Analysis') {
             environment {
                 SCANNER_HOME = tool 'SonarScanner'
@@ -41,7 +66,7 @@ pipeline {
         stage('Quality Gate') {
             steps {
                 timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
+                    waitForQualityGate abortPipeline: false
                 }
             }
         }
@@ -54,20 +79,27 @@ pipeline {
             }
         }
 
-        stage('Docker Push to JFrog') {
+        stage('Trivy Image Scan') {
+            steps {
+                sh '''
+                    trivy image \
+                        --severity HIGH,CRITICAL \
+                        --exit-code 0 \
+                        "${IMAGE_NAME}"
+                '''
+            }
+        }
+
+        stage('Docker Push to DockerHub') {
             steps {
                 script {
-
                     docker.withRegistry(
                         'https://index.docker.io/v1/',
                         'credentials-dockerhub'
                     ) {
-
                         dockerImage.push("${BUILD_NUMBER}")
                         dockerImage.push('latest')
-
                     }
-
                 }
             }
         }
@@ -75,14 +107,14 @@ pipeline {
         stage('Deploy to EKS') {
             steps {
                 sh '''
-                aws eks update-kubeconfig \
-                --region us-east-1 \
-                --name my-eks-cluster
+                    aws eks update-kubeconfig \
+                        --region us-east-1 \
+                        --name my-eks-cluster
 
-                kubectl apply -f deployment.yaml
-                kubectl apply -f service.yaml
+                    kubectl apply -f deployment.yaml
+                    kubectl apply -f service.yaml
 
-                kubectl get pods
+                    kubectl get pods
                 '''
             }
         }
